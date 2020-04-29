@@ -2,10 +2,11 @@
 #include <Wire.h>
 #include <ETH.h>
 #include <WifiUDP.h>
-#include <SSD1306.h>
+//#include <SSD1306.h>
 #include <microTime.h>
 #include "microTimeLib.h"
 #include "DateTime.h"
+#include <M5Stack.h>
 
 
 
@@ -29,19 +30,19 @@ DateTime transmitTime;
 byte origTimeTs[9];
 
 // offset used to adjust PPS clock pulse to match known good time sources
-#define TIME_OFFSET_USEC 503900 
+#define TIME_OFFSET_USEC 503900
 
 //interval in seconds to sync system time with gps
 #define TIMESYNC_INTERVAL 15
 
 //i2c bus pins
-#define SDApin 16
-#define SCLpin 17
+//#define SDApin 16
+//#define SCLpin 17
 
 //initialize i2C OLED on esp32 I2C0 (pins 16 and 17)
-SSD1306 display(0x3C, SDApin, SCLpin); // Addr, SDA, SCL
-#define lcdOffsetUpper  8 // width in number of pixels for upper free space on lcd
-#define lcdOffsetLeft  4 // width in number of pixels for left free space on lcd
+// SSD1306 display(0x3C, SDApin, SCLpin); // Addr, SDA, SCL
+//  #define lcdOffsetUpper  8 // width in number of pixels for upper free space on lcd
+//  #define lcdOffsetLeft  4 // width in number of pixels for left free space on lcd
 
 // rocking switch connecting pin 5 with high/low; toggles between serialConfig/NTPserver mode
 #define SWITCH_PIN 5
@@ -62,11 +63,17 @@ String ip = ""; // we use DHCP
 
 void writeLCD(uint8_t row, String txt)
  {
-  display.setColor(BLACK);
+  /*display.setColor(BLACK);
   display.fillRect(lcdOffsetLeft, lcdOffsetUpper+(row*14), 128, 16);
   display.setColor(WHITE);
   display.drawString(lcdOffsetLeft, lcdOffsetUpper+(row*14), txt);
   display.display();
+*/
+  //            ( x,  y,  w,  h , color)
+  M5.Lcd.fillRect(0, row*60, 320, 60, BLACK);  // clean row
+  M5.Lcd.setTextColor(TFT_YELLOW);
+  //                text, x,   y,       1: If use the loaded font
+  M5.Lcd.drawString(txt,  10, 30+(row*60), 1);
  }
 
 
@@ -74,7 +81,7 @@ void writeLCD(uint8_t row, String txt)
 static bool eth_connected = false;
 void EthEvent(WiFiEvent_t event)
 {
-  
+
   switch (event) {
     case SYSTEM_EVENT_ETH_START:
       Serial.println("ETH Started");
@@ -90,7 +97,7 @@ void EthEvent(WiFiEvent_t event)
       digitalWrite(LED_PIN, LOW);
       ip = ETH.localIP().toString();
       writeLCD(2,"IPv4: "+ip);
-      
+
       Serial.print("ETH MAC: ");
       Serial.print(ETH.macAddress());
       Serial.print(", IPv4: ");
@@ -126,13 +133,13 @@ void IRAM_ATTR handleInterrupt() {
   portENTER_CRITICAL_ISR(&mux);
     numberOfInterrupts++;
   portEXIT_CRITICAL_ISR(&mux);
-}  
+}
 
 
 /*
 // fake time provider
 time_t faketimeprovider(){
-  
+
     tmElements_t timeinfo;
     timeinfo.Hour = 14;
     timeinfo.Minute = 33;
@@ -146,7 +153,7 @@ time_t faketimeprovider(){
 
 //gps time provider
 time_t gpstimeprovider()
-{    
+{
     DateTime gpstime = getZDA();
     time_t _time;
     _time = gpstime.ntptime();
@@ -194,8 +201,8 @@ void printSysTime()
         Serial.print("00");
     else if (diff2 < 100000)
         Serial.print("0");
-    
-    
+
+
     Serial.print(diff2);
     Serial.println();
 }
@@ -210,9 +217,9 @@ void printbyteConversionTest()
         delayMicroseconds(rnd);
         long longInt = microsfraction();
         unsigned char byteArray[4];
-        longInt = longInt / 10; 
+        longInt = longInt / 10;
         Serial.println(longInt);
-        
+
         // convert unsigned long int to 4-byte array
         byteArray[0] = (int)((longInt >> 24) & 0xFF) ;
         byteArray[1] = (int)((longInt >> 16) & 0xFF) ;
@@ -225,14 +232,14 @@ void printbyteConversionTest()
         unsigned long int anotherLongInt;
 
         // revert from byte array to unsigned long int
-        anotherLongInt = ( (byteArray[0] << 24) 
-                        + (byteArray[1] << 16) 
-                        + (byteArray[2] << 8) 
+        anotherLongInt = ( (byteArray[0] << 24)
+                        + (byteArray[1] << 16)
+                        + (byteArray[2] << 8)
                         + (byteArray[3] ) );
 
         Serial.println(anotherLongInt);
 
-        
+
 }
 */
 
@@ -240,7 +247,7 @@ void updateLCDtime()
 {
   long lcdnowfraction = microsecond();
   DateTime lcdnow(now());
-  
+
   String stime = "";
   stime += lcdnow.toString();
   stime += ",";
@@ -255,10 +262,10 @@ void updateLCDtime()
     stime += "00";
   else if (lcdnowfraction < 100000)
     stime += "0";
-  
+
   stime += lcdnowfraction;
 
-  
+
   writeLCD(3,stime);
 }
 
@@ -273,19 +280,25 @@ void updateDateTime(DateTime &dt)
         _microsfraction -= 1000000;
         _now++;
     }
-    
+
     DateTime _dt(_now, _microsfraction);
     dt = _dt;
 }
 
 
 
-void setup() 
+void setup()
 {
+    // m5
+    M5.begin();
+    M5.Power.begin();
+    M5.Lcd.fillScreen(0);  // clean all
+
+
     // no radio needed
     WiFi.mode(WIFI_OFF); // turn off wifi radio
     btStop(); // turn off ble radio
-        
+
 
     // setup PPS interrupt
     pinMode(PULSE_PIN, INPUT_PULLDOWN);
@@ -301,27 +314,31 @@ void setup()
     digitalWrite(LED_PIN, HIGH);
 
     //start i2c
-    Wire.begin(SDApin,SCLpin);
+//    Wire.begin(SDApin,SCLpin);
 
     // initialise the OLED
-    display.init(); 
+  /*  display.init();
     display.clear();
-    display.flipScreenVertically(); 
+    display.flipScreenVertically();
     //display.setFont(ArialMT_Plain_10); // does what it says
     // Set the origin of text to top left
     //display.setTextAlignment(TEXT_ALIGN_CENTER_BOTH);
-    
-    
+*/
+    M5.Lcd.fillScreen(0);
+    M5.Lcd.setTextSize(1);
+    M5.Lcd.setBrightness(255);
+
+
     Serial.begin(115200);
-    
+
     Serial.println("\r\n\r\n\r\nNTP Server started.");
     writeLCD(0,"ESP32 GPS NTP Server");
-    
-   
+
+
     //set fake time for debugging purposes
     //const unsigned long DEFAULT_TIME = 1357041600UL;
     //setTime(DEFAULT_TIME);
-    
+
     GPSsetup();
     delay(1230);
     DateTime _GPStime;
@@ -335,32 +352,32 @@ void setup()
         _GPStime = getZDA();
     }
 
-    
-    while(timeStatus() == timeNotSet) 
+
+    while(timeStatus() == timeNotSet)
      {
         Serial.println("setting system time...");
-        
-        setTime(_GPStime.ntptime()); 
-        delay(500);
-        
-     }
-   
 
-    if (timeStatus() == timeSet) 
+        setTime(_GPStime.ntptime());
+        delay(500);
+
+     }
+
+
+    if (timeStatus() == timeSet)
      {
         Serial.println("initial time sync successful.");
 
         // we sync coarse system time from gps serial time messages:
-        Serial.println("setting GPS as SyncProvider... ");     
+        Serial.println("setting GPS as SyncProvider... ");
         setSyncProvider(&gpstimeprovider);
 
         // get time from GPS every TIMESYNC_INTERVAL seconds
         setSyncInterval(TIMESYNC_INTERVAL);
         Serial.println("ok.");
-     }  
+     }
 
     //delay(120);
-    
+
     Serial.println("getting NTP reference time:\r\n");
     updateDateTime(referenceTime);
     referenceTime.print();
@@ -368,11 +385,11 @@ void setup()
     WiFi.onEvent(EthEvent); //attach ETH PHY event handler
     ETH.begin(); //start ETH
     Udp.begin(NTP_PORT); // start udp server
-    
+
 }
 
 
-uint64_t DateTimeToNtp64(DateTime dt) 
+uint64_t DateTimeToNtp64(DateTime dt)
 {
     uint64_t ntpts;
 
@@ -383,7 +400,7 @@ uint64_t DateTimeToNtp64(DateTime dt)
 }
 
 /*
-uint32_t DateTimeToNtpSeconds(DateTime dt) 
+uint32_t DateTimeToNtpSeconds(DateTime dt)
 {
     uint32_t ntpts;
     ntpts = dt.ntptime();
@@ -394,7 +411,7 @@ uint32_t DateTimeToNtpSeconds(DateTime dt)
 */
 
 /*
-uint32_t DateTimeToNtpFraction(DateTime dt) 
+uint32_t DateTimeToNtpFraction(DateTime dt)
 {
 
     uint32_t ntpts;
@@ -406,14 +423,14 @@ uint32_t DateTimeToNtpFraction(DateTime dt)
 
 
 // send NTP reply to the given address
-void sendNTPpacket(IPAddress remoteIP, int remotePort) 
+void sendNTPpacket(IPAddress remoteIP, int remotePort)
 {
   // set all bytes in the packet buffer to 0
   //memset(packetBuffer, 0, NTP_PACKET_SIZE);
 
   // Initialize values needed to form NTP request
   // (see URL in readme.md for details on packet fields)
-  
+
   // LI: 0, Version: 4, Mode: 4 (server)
   //packetBuffer[0] = 0b00100100;
   // LI: 0, Version: 3, Mode: 4 (server)
@@ -421,7 +438,7 @@ void sendNTPpacket(IPAddress remoteIP, int remotePort)
 
   // Stratum, or type of clock
   packetBuffer[1] = 0b00000001;
-  
+
   // Polling Interval
   packetBuffer[2] = 4;
 
@@ -432,33 +449,33 @@ void sendNTPpacket(IPAddress remoteIP, int remotePort)
   // 0xF8 <--> -8 <--> 0.00390625 s
   // 0xF9 <--> -7 <--> 0.0078125 s
   // 0xFA <--> -6 <--> 0.0156250 s
-  // 0xFB <--> -5 <--> 0.0312500 s 
+  // 0xFB <--> -5 <--> 0.0312500 s
   packetBuffer[3] = 0xF7;
-  
+
   // 8 bytes for Root Delay & Root Dispersion
   // root delay
-  packetBuffer[4] = 0; 
+  packetBuffer[4] = 0;
   packetBuffer[5] = 0;
-  packetBuffer[6] = 0; 
+  packetBuffer[6] = 0;
   packetBuffer[7] = 0;
-  
+
   // root dispersion
   packetBuffer[8] = 0;
   packetBuffer[9] = 0;
   packetBuffer[10] = 0;
   packetBuffer[11] = 0x50;
-  
-  
+
+
   //time source (namestring)
   packetBuffer[12] = 71; // G
   packetBuffer[13] = 80; // P
   packetBuffer[14] = 83; // S
   packetBuffer[15] = 0;
 
-  
+
   // Reference Time
   uint64_t refT = DateTimeToNtp64(referenceTime);
-  
+
   packetBuffer[16] = (int)((refT >> 56) & 0xFF);
   packetBuffer[17] = (int)((refT >> 48) & 0xFF);
   packetBuffer[18] = (int)((refT >> 40) & 0xFF);
@@ -467,9 +484,9 @@ void sendNTPpacket(IPAddress remoteIP, int remotePort)
   packetBuffer[21] = (int)((refT >> 16) & 0xFF);
   packetBuffer[22] = (int)((refT >> 8) & 0xFF);
   packetBuffer[23] = (int)(refT & 0xFF);
- 
+
   // Origin Time
-  //copy old transmit time to origtime 
+  //copy old transmit time to origtime
 
   for (int i = 24; i < 32; i++)
   {
@@ -479,7 +496,7 @@ void sendNTPpacket(IPAddress remoteIP, int remotePort)
 
   // write Receive Time to bytes 32-39
   refT = DateTimeToNtp64(receiveTime);
-  
+
   packetBuffer[32] = (int)((refT >> 56) & 0xFF);
   packetBuffer[33] = (int)((refT >> 48) & 0xFF);
   packetBuffer[34] = (int)((refT >> 40) & 0xFF);
@@ -488,12 +505,12 @@ void sendNTPpacket(IPAddress remoteIP, int remotePort)
   packetBuffer[37] = (int)((refT >> 16) & 0xFF);
   packetBuffer[38] = (int)((refT >> 8) & 0xFF);
   packetBuffer[39] = (int)(refT & 0xFF);
-  
-  
+
+
   // get current time + write  as Transmit Time to bytes 40-47
   updateDateTime(transmitTime);
   refT = DateTimeToNtp64(transmitTime);
-  
+
   packetBuffer[40] = (int)((refT >> 56) & 0xFF);
   packetBuffer[41] = (int)((refT >> 48) & 0xFF);
   packetBuffer[42] = (int)((refT >> 40) & 0xFF);
@@ -502,7 +519,7 @@ void sendNTPpacket(IPAddress remoteIP, int remotePort)
   packetBuffer[45] = (int)((refT >> 16) & 0xFF);
   packetBuffer[46] = (int)((refT >> 8) & 0xFF);
   packetBuffer[47] = (int)(refT & 0xFF);
-  
+
   // send reply:
   Udp.beginPacket(remoteIP, remotePort);
   Udp.write(packetBuffer, NTP_PACKET_SIZE);
@@ -512,7 +529,7 @@ void sendNTPpacket(IPAddress remoteIP, int remotePort)
 
 
 
-void loop() 
+void loop()
 {
     // interrupt mux handler; this gets called on each
     // PPS pulse / precisely at beginning of every second
@@ -521,13 +538,13 @@ void loop()
         portENTER_CRITICAL(&mux);
             numberOfInterrupts=0;
             SyncToPPS();
-            
+
         portEXIT_CRITICAL(&mux);
-        
+
         updateDateTime(referenceTime);
         //printSysTime();
         updateLCDtime();
-           
+
     }
 
 
@@ -563,21 +580,21 @@ void loop()
 
         int packetSize = Udp.parsePacket();
 
-        if (packetSize) // we've got a packet 
+        if (packetSize) // we've got a packet
         {
             updateDateTime(receiveTime);
 
-            
+
             //store sender ip and port for later use
             remoteIP = Udp.remoteIP();
             remotePort = Udp.remotePort();
 
-           /* 
+           /*
             Serial.print("Received UDP packet with ");
             Serial.print(packetSize);
             Serial.print(" bytes size - ");
             Serial.print("SourceIP ");
-            
+
             for (uint8_t i =0; i < 4; i++)
             {
                 Serial.print(remoteIP[i], DEC);
@@ -586,11 +603,11 @@ void loop()
                     Serial.print(".");
                 }
             }
-            
+
             Serial.print(", Port ");
             Serial.println(remotePort);
             */
-            
+
             Serial.print("query: ");
             Serial.print(receiveTime.toString());
             Serial.print(",");
@@ -599,7 +616,7 @@ void loop()
 
             digitalWrite(LED_PIN, HIGH);
 
-            
+
             // We've received a packet, read the data from it
             // read the packet into the buffer
             Udp.read(packetBuffer, NTP_PACKET_SIZE);
@@ -609,7 +626,7 @@ void loop()
             {
                 origTimeTs[i] = packetBuffer[40+i];
             }
-            
+
             //send NTP reply
             sendNTPpacket(remoteIP, remotePort);
             Serial.print("reply: ");
@@ -617,14 +634,14 @@ void loop()
             Serial.print(",");
             Serial.println(transmitTime.microsfraction());
             digitalWrite(LED_PIN, LOW);
-            
+
             //output "done"
             //updateLCDtime();
             Serial.println("NTP reply sent.\r\n*********************************");
-            
+
         }
     }
-    
+
     // put your main code here, to run repeatedly:
 
 
